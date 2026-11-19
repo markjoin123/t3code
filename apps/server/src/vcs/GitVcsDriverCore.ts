@@ -654,6 +654,11 @@ function isMissingWorktreeStderr(stderr: string): boolean {
 }
 
 // Fetch stderr can carry credentials; persist only fixed diagnoses or generic failures.
+// A leftover loose ref may contain a space (`refs/remotes/origin/dev 2`); repeat only a bounded path.
+const BROKEN_LOCAL_REF_MAX_LENGTH = 255;
+const BROKEN_LOCAL_REF_LINE = /^fatal: bad object refs\//i;
+const BROKEN_LOCAL_REF_PATH = /^fatal: bad object (refs\/[A-Za-z0-9._+@/ -]+)$/i;
+
 function fetchFailureDetail(stderr: string): string | undefined {
   const lines = stderr.split(/\r?\n/).map((line) => line.trim());
   if (
@@ -685,6 +690,12 @@ function fetchFailureDetail(stderr: string): string | undefined {
   }
   if (isRefLockFailure(stderr)) {
     return "Git could not update a local reference. Another Git operation or a stale lock may be blocking the fetch; check the repository on the server, then retry.";
+  }
+  const brokenRefLine = lines.find((line) => BROKEN_LOCAL_REF_LINE.test(line));
+  if (brokenRefLine !== undefined) {
+    const ref = BROKEN_LOCAL_REF_PATH.exec(brokenRefLine)?.[1];
+    const shown = ref !== undefined && ref.length <= BROKEN_LOCAL_REF_MAX_LENGTH ? ` (${ref})` : "";
+    return `Git found a broken local ref${shown}. Check the local repository before retrying.`;
   }
   return undefined;
 }

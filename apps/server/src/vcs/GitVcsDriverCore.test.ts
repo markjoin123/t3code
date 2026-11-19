@@ -2018,6 +2018,33 @@ it.effect.each([
     stderr: "fatal: unexpected remote failure",
     expected: "git fetch origin failed",
   },
+  {
+    name: "broken local ref",
+    stderr:
+      "fatal: bad object refs/remotes/origin/dev 2\nerror: /tmp/repo.git did not send all necessary objects",
+    expected:
+      "Git found a broken local ref (refs/remotes/origin/dev 2). Check the local repository before retrying.",
+    exact: true,
+  },
+  {
+    name: "broken local ref with an unsafe path",
+    stderr:
+      "fatal: bad object refs/remotes/origin/dev https://user:secret-fetch-token@example.com/private",
+    expected: "Git found a broken local ref. Check the local repository before retrying.",
+    exact: true,
+  },
+  {
+    name: "broken local ref too long to repeat",
+    stderr: `fatal: bad object refs/${"a".repeat(300)}`,
+    expected: "Git found a broken local ref. Check the local repository before retrying.",
+    exact: true,
+  },
+  {
+    name: "bad object outside refs",
+    stderr: "fatal: bad object 0123456789abcdef0123456789abcdef01234567",
+    expected: "git fetch origin failed",
+    exact: true,
+  },
 ] as const)("reports $name during fetch without retaining remote output", (scenario) =>
   Effect.gen(function* () {
     const secret = "secret-fetch-token";
@@ -2052,7 +2079,12 @@ it.effect.each([
     );
     const cwd = yield* makeTmpDir();
     const error = yield* driver.fetchRemote({ cwd, remoteName: "origin" }).pipe(Effect.flip);
-    assert.include(error.detail, scenario.expected);
+    if ("exact" in scenario) {
+      assert.equal(error.detail, scenario.expected);
+    } else {
+      assert.include(error.detail, scenario.expected);
+    }
+    assert.notInclude(error.detail, "fatal:");
     assert.equal(error.exitCode, 128);
     assert.equal(error.stderrLength, stderr.length);
     assert.equal(error.stdoutLength, secret.length);
